@@ -1,0 +1,35 @@
+# Only Kafka here - MySQL is your local install, not containerized.
+#
+# Two listeners on purpose:
+#   PLAINTEXT (9092) - for clients INSIDE the container/Docker network,
+#                       e.g. `docker exec ... kafka-topics.sh`
+#   EXTERNAL  (9094)  - for your Spring Boot app running on Windows,
+#                       outside Docker, to reach Kafka via localhost:9094
+# Without this split, a client would get told "reconnect to localhost:9094"
+# even when running inside the container, where port 9094 doesn't exist -
+# that's the "could not be established" loop.
+services:
+  kafka:
+    image: apache/kafka:3.7.0
+    container_name: wallet-ledger-kafka
+    ports:
+      - "9094:9094"
+    environment:
+      - KAFKA_NODE_ID=1
+      - KAFKA_PROCESS_ROLES=broker,controller
+      - KAFKA_LISTENERS=PLAINTEXT://:9092,EXTERNAL://:9094,CONTROLLER://:9093
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://wallet-ledger-kafka:9092,EXTERNAL://localhost:9094
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9093
+      - KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+
+  # Step 7: Redis for rate limiting. Host port 6380 (not the default 6379)
+  # since another project on this machine already uses 6379. Redis doesn't
+  # have Kafka's "advertised listener" complexity - a straight port remap
+  # is enough, no internal/external split needed.
+  redis:
+    image: redis:7-alpine
+    container_name: wallet-ledger-redis
+    ports:
+      - "6380:6379"
